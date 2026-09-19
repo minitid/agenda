@@ -1,0 +1,1117 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>TimePlanner Pro SHN & INSA</title>
+  <!-- QRCode.js pour synchro instantanée PC -> Mobile -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <!-- LZ-String pour compresser l'emploi du temps dans le QR Code -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b1329;
+      --panel-bg: #151f38;
+      --card-bg: #1e294b;
+      --card-hover: #2a3966;
+      --border: #2e3d67;
+      --border-light: #3e5185;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #38bdf8;
+      --primary-hover: #0284c7;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --cell-h: 22px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
+    body { display: flex; height: 100vh; background: var(--bg); color: var(--text); overflow: hidden; }
+
+    /* LAYOUT PRINCIPAL */
+    #app-container { display: flex; width: 100vw; height: 100vh; overflow: hidden; position: relative; }
+
+    /* SIDEBAR */
+    #sidebar {
+      width: 330px;
+      min-width: 330px;
+      background: var(--panel-bg);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      z-index: 50;
+      transition: transform 0.3s ease;
+    }
+
+    .brand {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .brand h1 { font-size: 1.05rem; font-weight: 800; color: var(--primary); letter-spacing: -0.5px; }
+    .badge-granularity { font-size: 0.68rem; background: #0369a1; padding: 2px 7px; border-radius: 999px; font-weight: 700; }
+
+    .nav-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      background: #111a33;
+    }
+    .nav-tab {
+      flex: 1;
+      text-align: center;
+      padding: 9px 4px;
+      font-size: 0.76rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    .nav-tab.active {
+      color: #fff;
+      border-bottom-color: var(--primary);
+      background: rgba(56, 189, 248, 0.08);
+    }
+
+    .tab-view {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* Items Sélecteur */
+    .cat-card {
+      background: var(--card-bg);
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      border-left: 5px solid transparent;
+      padding: 8px 10px;
+      transition: all 0.15s;
+    }
+    .cat-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.82rem;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .badge-prio {
+      font-size: 0.65rem;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-weight: bold;
+    }
+    .prio-1 { background: rgba(239, 68, 68, 0.25); color: #fca5a5; border: 1px solid rgba(239,68,68,0.4); }
+    .prio-2 { background: rgba(245, 158, 11, 0.25); color: #fde68a; border: 1px solid rgba(245,158,11,0.4); }
+    .prio-3 { background: rgba(56, 189, 248, 0.25); color: #bae6fd; border: 1px solid rgba(56,189,248,0.4); }
+
+    .chips-container { display: flex; flex-wrap: wrap; gap: 4px; }
+    .chip {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      font-size: 0.72rem;
+      padding: 3px 7px;
+      border-radius: 4px;
+      cursor: pointer;
+      color: var(--text);
+      transition: all 0.15s;
+    }
+    .chip:hover { background: rgba(255,255,255,0.15); }
+    .chip.selected {
+      background: var(--primary);
+      color: #0b1329;
+      font-weight: bold;
+      box-shadow: 0 0 8px rgba(56,189,248,0.5);
+    }
+
+    /* ZONE CENTRALE */
+    #main-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+      position: relative;
+    }
+
+    header {
+      padding: 10px 16px;
+      background: var(--panel-bg);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      background: var(--primary);
+      color: #0b1329;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 0.78rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.15s;
+    }
+    .btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+    .btn-secondary { background: var(--card-bg); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: var(--card-hover); }
+    .btn-danger { background: rgba(239, 68, 68, 0.2); color: #fca5a5; border: 1px solid rgba(239,68,68,0.4); }
+    .btn-danger:hover { background: var(--danger); color: #fff; }
+
+    /* PASTILLE DE STATUT */
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      background: var(--card-bg);
+      padding: 5px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      cursor: pointer;
+    }
+    .status-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      box-shadow: 0 0 8px currentColor;
+    }
+    .status-dot.green { background: var(--success); color: var(--success); }
+    .status-dot.orange { background: var(--warning); color: var(--warning); }
+    .status-dot.red { background: var(--danger); color: var(--danger); }
+    .status-label { font-size: 0.78rem; font-weight: 700; }
+
+    /* SÉLECTEUR JOUR MOBILE */
+    .mobile-day-nav {
+      display: none;
+      padding: 6px;
+      background: #111a33;
+      border-bottom: 1px solid var(--border);
+      gap: 4px;
+      overflow-x: auto;
+    }
+    .mobile-day-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .mobile-day-btn.active {
+      background: var(--primary);
+      color: #0b1329;
+      border-color: var(--primary);
+    }
+
+    /* ALERTES */
+    #alert-banner {
+      display: none;
+      background: #451a03;
+      border-bottom: 1px solid #b45309;
+      color: #fde68a;
+      padding: 6px 14px;
+      font-size: 0.75rem;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    /* GRILLE */
+    #calendar-scroll {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: auto;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .calendar-table {
+      display: grid;
+      grid-template-columns: 62px repeat(7, minmax(130px, 1fr));
+      background: var(--border);
+      gap: 1px;
+      min-width: 980px;
+    }
+
+    .grid-day-head {
+      position: sticky;
+      top: 0;
+      background: #151f38;
+      padding: 8px 4px;
+      text-align: center;
+      font-weight: 700;
+      font-size: 0.8rem;
+      color: var(--text);
+      z-index: 10;
+      border-bottom: 2px solid var(--primary);
+    }
+
+    .grid-time-label {
+      background: #0e1629;
+      color: var(--text-muted);
+      font-size: 0.65rem;
+      text-align: right;
+      padding: 2px 5px;
+      height: var(--cell-h);
+      line-height: calc(var(--cell-h) - 4px);
+      user-select: none;
+      border-bottom: 1px dotted rgba(255,255,255,0.05);
+    }
+    .grid-time-label.hour-mark {
+      font-weight: bold;
+      color: #e2e8f0;
+      border-top: 1px solid var(--border-light);
+    }
+
+    .time-slot-cell {
+      background: #111a2f;
+      height: var(--cell-h);
+      cursor: pointer;
+      position: relative;
+      font-size: 0.68rem;
+      padding: 1px 4px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      user-select: none;
+    }
+    .time-slot-cell.hour-top { border-top: 1px solid #273759; }
+    .time-slot-cell.half-hour { border-top: 1px dashed rgba(255,255,255,0.08); }
+    .time-slot-cell:hover { filter: brightness(1.25); outline: 1px solid rgba(255,255,255,0.3); }
+
+    /* TABLEAU DE BORD */
+    #bottom-dashboard {
+      height: 140px;
+      background: var(--panel-bg);
+      border-top: 1px solid var(--border);
+      padding: 8px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .dash-header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.78rem;
+    }
+    .dash-cards-scroll {
+      display: flex;
+      gap: 10px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+    }
+    .dash-cards-scroll::-webkit-scrollbar { height: 5px; }
+    .dash-cards-scroll::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 3px; }
+
+    .kpi-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      min-width: 140px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .kpi-title { font-size: 0.7rem; font-weight: 700; color: var(--text-muted); display: flex; justify-content: space-between; }
+    .kpi-val { font-size: 1rem; font-weight: 800; margin: 2px 0; }
+    .kpi-bar-track { width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden; }
+    .kpi-bar-fill { height: 100%; transition: width 0.3s; }
+
+    /* MODALES */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.75);
+      backdrop-filter: blur(4px);
+      z-index: 200;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-box {
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      width: 94%;
+      max-width: 820px;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+    }
+    .modal-head {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-content {
+      padding: 16px 18px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .modal-foot {
+      padding: 12px 18px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .form-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+    .form-table th { text-align: left; padding: 6px; color: var(--text-muted); border-bottom: 1px solid var(--border); }
+    .form-table td { padding: 6px; border-bottom: 1px solid var(--border); }
+    .inp-txt { background: #0b1329; border: 1px solid var(--border); color: #fff; padding: 5px 8px; border-radius: 5px; font-size: 0.78rem; }
+
+    @media (max-width: 820px) {
+      #sidebar {
+        position: absolute; left: 0; top: 0; bottom: 0;
+        transform: translateX(-100%);
+      }
+      #sidebar.open { transform: translateX(0); }
+      .mobile-day-nav { display: flex; }
+      .calendar-table { min-width: 100%; }
+      .calendar-table.mobile-day-view { grid-template-columns: 55px 1fr !important; }
+      .calendar-table.mobile-day-view .grid-day-head:not(.active-col),
+      .calendar-table.mobile-day-view .time-slot-cell:not(.active-col) { display: none; }
+      #btnToggleSidebar { display: inline-flex !important; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="app-container">
+
+  <!-- BARRE LATÉRALE -->
+  <aside id="sidebar">
+    <div class="brand">
+      <div>
+        <h1>TimePlanner Pro</h1>
+        <small style="color:var(--text-muted); font-size:0.7rem;">INSA Toulouse & Natation SHN</small>
+      </div>
+      <span class="badge-granularity">15 min</span>
+    </div>
+
+    <!-- ONGLETS -->
+    <div class="nav-tabs">
+      <div class="nav-tab active" onclick="switchSidebarTab('plan')">📅 Planning</div>
+      <div class="nav-tab" onclick="switchSidebarTab('tmpl')">💾 Modèles</div>
+      <div class="nav-tab" onclick="switchSidebarTab('sync')">📲 Synchro</div>
+      <div class="nav-tab" onclick="switchSidebarTab('hist')">📜 Archives</div>
+    </div>
+
+    <!-- ONGLET 1 : PALETTES -->
+    <div id="tab-plan" class="tab-view">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:0.75rem; font-weight:700; color:var(--text-muted);">PALETTES & SOUS-TÂCHES</span>
+        <button class="btn btn-secondary" style="padding:3px 8px; font-size:0.7rem;" onclick="openSettingsModal()">⚙️ Régler</button>
+      </div>
+      <div id="category-cards-container" style="display:flex; flex-direction:column; gap:8px;"></div>
+    </div>
+
+    <!-- ONGLET 2 : MODÈLES -->
+    <div id="tab-tmpl" class="tab-view" style="display:none;">
+      <h3 style="font-size:0.85rem;">Grille Type Récurrente</h3>
+      <p style="font-size:0.75rem; color:var(--text-muted);">
+        Sauvegarde ta semaine (amphis, entraînements obligatoires) pour la réutiliser chaque semaine.
+      </p>
+      <button class="btn" onclick="saveAsTemplate()">💾 Sauvegarder comme Grille Type</button>
+      <button class="btn btn-secondary" onclick="loadTemplate()">🔄 Charger la Grille Type</button>
+
+      <hr style="border-color:var(--border); margin:6px 0;">
+
+      <h3 style="font-size:0.85rem;">Vider la semaine</h3>
+      <button class="btn btn-danger" onclick="cleanWeekPreservingLocked()">🧹 Vider (Garder les fixes)</button>
+      <button class="btn btn-secondary" style="color:#ef4444; margin-top:5px;" onclick="hardResetWeek()">⚠️ Tout effacer (Semaine blanche)</button>
+    </div>
+
+    <!-- ONGLET 3 : SYNCHRO & INSA -->
+    <div id="tab-sync" class="tab-view" style="display:none;">
+      <h3 style="font-size:0.85rem;">📲 Passer sur Smartphone</h3>
+      <p style="font-size:0.73rem; color:var(--text-muted);">
+        Scanne ce QR code avec ton téléphone pour retrouver ton planning (utilise la compression LZ).
+      </p>
+      <div id="qrcode-box" style="background:#fff; padding:8px; border-radius:6px; display:inline-block; align-self:center;"></div>
+      <button class="btn btn-secondary" onclick="copySyncUrl()">📋 Copier le lien synchronisé</button>
+
+      <hr style="border-color:var(--border); margin:6px 0;">
+
+      <h3 style="font-size:0.85rem;">🏛️ Calendrier INSA (iCal)</h3>
+      <input type="text" id="inp-ical-url" class="inp-txt" placeholder="https://planning.insa-toulouse.fr/.../cal.ics">
+      <button class="btn" onclick="fetchIcalFromUrl()">⚡ Importer l'URL</button>
+      <div style="font-size:0.7rem; color:var(--text-muted); text-align:center;">OU</div>
+      <input type="file" id="inp-file-ics" accept=".ics" style="font-size:0.75rem;" onchange="handleFileIcs(event)">
+    </div>
+
+    <!-- ONGLET 4 : HISTORIQUE -->
+    <div id="tab-hist" class="tab-view" style="display:none;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h3 style="font-size:0.85rem;">Historique & Archives</h3>
+        <button class="btn btn-secondary" style="padding:3px 7px; font-size:0.7rem;" onclick="archiveCurrentWeek()">💾 Archiver</button>
+      </div>
+      <div id="history-list" style="display:flex; flex-direction:column; gap:8px;"></div>
+    </div>
+  </aside>
+
+  <!-- ZONE CENTRALE -->
+  <main id="main-content">
+    <header>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <button class="btn btn-secondary" id="btnToggleSidebar" style="display:none;" onclick="toggleSidebar()">☰ Menu</button>
+        <div class="status-badge" onclick="showStatusDetails()">
+          <div id="statusDot" class="status-dot green"></div>
+          <span id="statusLabel" class="status-label">Vérification...</span>
+          <span style="font-size:0.7rem; color:var(--text-muted);">▼</span>
+        </div>
+      </div>
+      <button class="btn" onclick="exportToGoogleCalendar()">📅 Exporter vers Google Calendar (.ics)</button>
+    </header>
+
+    <div id="alert-banner">
+      <span id="alert-text">⚠️ Attention</span>
+      <button onclick="document.getElementById('alert-banner').style.display='none'" style="background:none; border:none; color:#fde68a; cursor:pointer;">&times;</button>
+    </div>
+
+    <!-- NAVIGATION PAR JOUR (MOBILE) -->
+    <div class="mobile-day-nav" id="mobileDayNav">
+      <button class="mobile-day-btn" onclick="setMobileDay(-1)">Vue 7J</button>
+      <button class="mobile-day-btn active" onclick="setMobileDay(0)">Lun</button>
+      <button class="mobile-day-btn" onclick="setMobileDay(1)">Mar</button>
+      <button class="mobile-day-btn" onclick="setMobileDay(2)">Mer</button>
+      <button class="mobile-day-btn" onclick="setMobileDay(3)">Jeu</button>
+      <button class="mobile-day-btn" onclick="setMobileDay(4)">Ven</button>
+      <button class="mobile-day-btn" onclick="setMobileDay(5)">Sam</button>
+      <button class="mobile-day-btn" onclick="setMobileDay(6)">Dim</button>
+    </div>
+
+    <!-- GRILLE 15 MIN -->
+    <div id="calendar-scroll">
+      <div class="calendar-table" id="calendarTable"></div>
+    </div>
+
+    <!-- DASHBOARD -->
+    <div id="bottom-dashboard">
+      <div class="dash-header-row">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-weight:700; color:var(--text-muted); font-size:0.75rem;">BILAN HEURES</span>
+          <div style="display:flex; background:#0b1329; border-radius:4px; padding:2px; border:1px solid var(--border);">
+            <button id="btnViewWeek" class="btn" style="padding:2px 8px; font-size:0.7rem;" onclick="setCounterMode('week')">Semaine</button>
+            <button id="btnViewDay" class="btn btn-secondary" style="padding:2px 8px; font-size:0.7rem; border:none;" onclick="setCounterMode('day')">Par Jour</button>
+          </div>
+        </div>
+        <div id="sleep-badge" style="font-size:0.75rem; font-weight:700; color:#818cf8;">🌙 Sommeil 24h</div>
+      </div>
+      <div class="dash-cards-scroll" id="kpiScroll"></div>
+    </div>
+  </main>
+</div>
+
+<!-- MODAL PARAMÈTRES -->
+<div class="modal-overlay" id="settingsModal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h3 style="font-size:0.95rem; color:var(--primary);">⚙️ Réglage des Catégories</h3>
+      <button onclick="closeSettingsModal()" style="background:none; border:none; color:#fff; font-size:1.2rem; cursor:pointer;">&times;</button>
+    </div>
+    <div class="modal-content">
+      <table class="form-table">
+        <thead>
+          <tr>
+            <th style="width:40px;">Prio</th>
+            <th>Catégorie</th>
+            <th>Couleur</th>
+            <th>Obj(h)</th>
+            <th>Sous-parties (séparées par virgule)</th>
+            <th>Fixe ?</th>
+            <th>Cpt ?</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="settingsTableBody"></tbody>
+      </table>
+      <button class="btn btn-secondary" style="align-self:flex-start;" onclick="addNewCategoryRow()">➕ Ajouter une catégorie</button>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="resetDefaultConfig()">Défaut INSA</button>
+      <button class="btn" onclick="saveSettingsFormAndClose()">Enregistrer & Fermer</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL STATUT -->
+<div class="modal-overlay" id="statusModal">
+  <div class="modal-box" style="max-width:480px;">
+    <div class="modal-head">
+      <h3 id="modalStatusTitle" style="font-size:0.95rem;">Bilan de conformité</h3>
+      <button onclick="document.getElementById('statusModal').style.display='none'" style="background:none; border:none; color:#fff; font-size:1.2rem; cursor:pointer;">&times;</button>
+    </div>
+    <div class="modal-content" id="modalStatusContent"></div>
+  </div>
+</div>
+
+<script>
+  // 1. CONFIGURATION DE BASE
+  const DEFAULT_CATEGORIES = [
+    { id: 'cat_sommeil', name: 'Sommeil', priority: 1, color: '#6366f1', targetHours: 56, keepOnReset: true, showInCounter: true, subs: ['Nuit', 'Sieste récup'] },
+    { id: 'cat_cours', name: 'Cours INSA', priority: 2, color: '#2563eb', targetHours: 24, keepOnReset: true, showInCounter: true, subs: ['TD/Amphi', 'TP', 'Projet'] },
+    { id: 'cat_reeduc', name: 'Rééduc Épaule', priority: 3, color: '#f59e0b', targetHours: 6, keepOnReset: false, showInCounter: true, subs: ['Kiné Cabinet', 'Renfo coiffe'] },
+    { id: 'cat_natation', name: 'Natation', priority: 4, color: '#06b6d4', targetHours: 10, keepOnReset: true, showInCounter: true, subs: ['Bassin', 'Sprint'] },
+    { id: 'cat_sport_plus', name: 'Renfo/Cardio', priority: 5, color: '#10b981', targetHours: 5, keepOnReset: false, showInCounter: true, subs: ['Gainage', 'Vélo', 'Muscu bas'] },
+    { id: 'cat_travail_perso', name: 'Travail Perso', priority: 6, color: '#8b5cf6', targetHours: 10, keepOnReset: false, showInCounter: true, subs: ['BU', 'Devoirs', 'Révisions'] },
+    { id: 'cat_social', name: 'Social/Couple', priority: 7, color: '#ec4899', targetHours: 8, keepOnReset: false, showInCounter: true, subs: ['Copine', 'Amis', 'Famille'] },
+    { id: 'cat_temps_perso', name: 'Temps Perso', priority: 8, color: '#64748b', targetHours: 6, keepOnReset: false, showInCounter: false, subs: ['Détente', 'Repas', 'Trajet'] }
+  ];
+
+  let appData = {
+    categories: JSON.parse(JSON.stringify(DEFAULT_CATEGORIES)),
+    grid: {},
+    templateGrid: {},
+    counterMode: 'week',
+    mobileDay: -1,
+    history: []
+  };
+
+  let activeTool = { catId: 'cat_cours', sub: 'TD/Amphi' };
+  let isMouseDown = false;
+  let currentPaintMode = 'paint';
+
+  const days = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+  const startHour = 5;
+  const endHour = 24;
+
+  // INITIALISATION
+  function initApp() {
+    loadLocalStorage();
+    checkUrlSyncImport();
+    buildCalendar();
+    renderSidebar();
+    refreshAllUI();
+    updateQRCode();
+  }
+
+  function saveState() {
+    localStorage.setItem('insa_timeplanner_v4', JSON.stringify(appData));
+    updateQRCode();
+  }
+
+  function loadLocalStorage() {
+    const saved = localStorage.getItem('insa_timeplanner_v4');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.categories) appData.categories = parsed.categories;
+        if (parsed.grid) appData.grid = parsed.grid;
+        if (parsed.templateGrid) appData.templateGrid = parsed.templateGrid;
+        if (parsed.history) appData.history = parsed.history;
+      } catch(e) {}
+    }
+    if (appData.categories.length > 0) {
+      activeTool = { catId: appData.categories[0].id, sub: appData.categories[0].subs[0] || '' };
+    }
+  }
+
+  // CALENDRIER (15 MIN) & GESTION CLICS
+  function buildCalendar() {
+    const table = document.getElementById('calendarTable');
+    table.innerHTML = '';
+
+    const corner = document.createElement('div');
+    corner.className = 'grid-day-head';
+    corner.innerText = 'Heure';
+    table.appendChild(corner);
+
+    days.forEach((d, dIdx) => {
+      const dh = document.createElement('div');
+      dh.className = `grid-day-head head-col-${dIdx}`;
+      dh.innerText = d;
+      table.appendChild(dh);
+    });
+
+    for (let h = startHour; h < endHour; h++) {
+      for (let q = 0; q < 4; q++) {
+        const timeLabel = document.createElement('div');
+        timeLabel.className = `grid-time-label ${q === 0 ? 'hour-mark' : ''}`;
+        timeLabel.innerText = q === 0 ? `${String(h).padStart(2,'0')}:00` : (q === 2 ? `${String(h).padStart(2,'0')}:30` : '');
+        table.appendChild(timeLabel);
+
+        for (let d = 0; d < 7; d++) {
+          const cell = document.createElement('div');
+          cell.className = `time-slot-cell col-${d} ${q === 0 ? 'hour-top' : (q === 2 ? 'half-hour' : '')}`;
+          const key = `${d}-${h}-${q}`;
+          cell.id = `slot-${key}`;
+
+          cell.onmousedown = (e) => {
+            isMouseDown = true;
+            const curr = appData.grid[key];
+            if (curr && curr.catId === activeTool.catId && curr.sub === activeTool.sub) {
+              currentPaintMode = 'erase';
+              delete appData.grid[key];
+            } else {
+              currentPaintMode = 'paint';
+              appData.grid[key] = { ...activeTool };
+            }
+            refreshAllUI();
+            saveState();
+          };
+
+          cell.onmouseenter = (e) => {
+            if (!isMouseDown) return;
+            if (currentPaintMode === 'erase') {
+              delete appData.grid[key];
+            } else {
+              appData.grid[key] = { ...activeTool };
+            }
+            refreshAllUI();
+            saveState();
+          };
+
+          table.appendChild(cell);
+        }
+      }
+    }
+
+    window.onmouseup = () => { isMouseDown = false; };
+  }
+
+  function refreshAllUI() {
+    updateGridVisuals();
+    updateDashboard();
+    checkConflictsAndFatigue();
+  }
+
+  function updateGridVisuals() {
+    for (let d = 0; d < 7; d++) {
+      for (let h = startHour; h < endHour; h++) {
+        for (let q = 0; q < 4; q++) {
+          const key = `${d}-${h}-${q}`;
+          const cell = document.getElementById(`slot-${key}`);
+          if (!cell) continue;
+
+          const item = appData.grid[key];
+          if (item) {
+            const cat = appData.categories.find(c => c.id === item.catId);
+            if (cat) {
+              cell.style.background = cat.color;
+              cell.style.color = '#fff';
+              cell.innerHTML = `<strong>${cat.name.split(' ')[0]}</strong> ${item.sub}`;
+              cell.title = `${days[d]} ${h}h${String(q*15).padStart(2,'0')} : ${cat.name} (${item.sub})`;
+            } else {
+              delete appData.grid[key];
+            }
+          } else {
+            cell.style.background = '#111a2f';
+            cell.innerHTML = '';
+            cell.title = '';
+          }
+        }
+      }
+    }
+  }
+
+  // DASHBOARD & SOMMEIL
+  function updateDashboard() {
+    const hoursCount = {};
+    appData.categories.forEach(c => hoursCount[c.id] = 0);
+
+    Object.entries(appData.grid).forEach(([key, item]) => {
+      if (hoursCount[item.catId] !== undefined) hoursCount[item.catId] += 0.25;
+    });
+
+    hoursCount['cat_sommeil'] = (hoursCount['cat_sommeil'] || 0) + (5 * 7);
+    const sleepTotal = hoursCount['cat_sommeil'];
+    document.getElementById('sleep-badge').innerText = `🌙 Sommeil 24h : ${(sleepTotal/7).toFixed(1)}h/nuit (Total: ${sleepTotal}h)`;
+
+    const container = document.getElementById('kpiScroll');
+    container.innerHTML = '';
+
+    appData.categories.forEach(cat => {
+      if (!cat.showInCounter) return;
+      const logged = hoursCount[cat.id] || 0;
+      const target = appData.counterMode === 'week' ? cat.targetHours : Number((cat.targetHours / 7).toFixed(1));
+      const valDisplay = appData.counterMode === 'week' ? `${logged.toFixed(1)}h` : `${(logged / 7).toFixed(1)}h/j`;
+      const targetDisplay = appData.counterMode === 'week' ? `${cat.targetHours}h` : `${(cat.targetHours / 7).toFixed(1)}h/j`;
+      const pct = target > 0 ? Math.round((logged / cat.targetHours) * 100) : 100;
+
+      let statColor = 'var(--danger)';
+      if (pct >= 95) statColor = 'var(--success)';
+      else if (pct >= 75) statColor = 'var(--warning)';
+
+      const card = document.createElement('div');
+      card.className = 'kpi-card';
+      card.innerHTML = `
+        <div class="kpi-title"><span>${cat.name}</span><span style="color:${cat.color};">#${cat.priority}</span></div>
+        <div class="kpi-val" style="color:${statColor};">${valDisplay} <span style="font-size:0.7rem; color:var(--text-muted);">/ ${targetDisplay}</span></div>
+        <div class="kpi-bar-track"><div class="kpi-bar-fill" style="width:${Math.min(100, pct)}%; background:${statColor};"></div></div>
+      `;
+      container.appendChild(card);
+    });
+    evaluateStatusBadge(hoursCount);
+  }
+
+  function evaluateStatusBadge(hoursCount) {
+    const dot = document.getElementById('statusDot');
+    const label = document.getElementById('statusLabel');
+    dot.className = 'status-dot';
+    let vitalMissing = [], secondaryMissing = [];
+
+    appData.categories.forEach(cat => {
+      const logged = hoursCount[cat.id] || 0;
+      const ratio = cat.targetHours > 0 ? (logged / cat.targetHours) : 1;
+      if (cat.priority <= 3 && ratio < 0.90) vitalMissing.push(`${cat.name} (${logged}h/${cat.targetHours}h)`);
+      else if (cat.priority > 3 && ratio < 0.75) secondaryMissing.push(`${cat.name} (${logged}h/${cat.targetHours}h)`);
+    });
+
+    if (vitalMissing.length === 0 && secondaryMissing.length === 0) {
+      dot.classList.add('green'); label.innerText = 'Semaine Parfaite'; label.style.color = 'var(--success)';
+    } else if (vitalMissing.length === 0 && secondaryMissing.length > 0) {
+      dot.classList.add('orange'); label.innerText = 'Presque Parfait'; label.style.color = 'var(--warning)';
+    } else {
+      dot.classList.add('red'); label.innerText = 'Objectifs Vitaux Incomplets'; label.style.color = 'var(--danger)';
+    }
+
+    document.getElementById('modalStatusContent').innerHTML = `
+      <div style="font-size:0.85rem;">
+        <h4 style="color:${vitalMissing.length ? 'var(--danger)' : 'var(--success)'}; margin-bottom:6px;">
+          ${vitalMissing.length ? '❌ Priorités Vitales en manque :' : '✅ Priorités vitales (1 à 3) complètes'}
+        </h4>
+        <ul>${vitalMissing.map(m => `<li>${m}</li>`).join('')}</ul>
+        <h4 style="color:${secondaryMissing.length ? 'var(--warning)' : 'var(--success)'}; margin:10px 0 6px;">
+          ${secondaryMissing.length ? '⚠️ Objectifs Secondaires à combler :' : '✅ Objectifs secondaires conformes'}
+        </h4>
+        <ul>${secondaryMissing.map(m => `<li>${m}</li>`).join('')}</ul>
+      </div>
+    `;
+  }
+
+  function showStatusDetails() { document.getElementById('statusModal').style.display = 'flex'; }
+
+  function checkConflictsAndFatigue() {
+    const banner = document.getElementById('alert-banner');
+    const text = document.getElementById('alert-text');
+    let alerts = [];
+
+    for (let d = 0; d < 6; d++) {
+      let last = -1, first = -1;
+      for (let h = endHour - 1; h >= startHour; h--) {
+        for (let q = 3; q >= 0; q--) { if (appData.grid[`${d}-${h}-${q}`]) { last = h + (q * 0.25); break; } }
+        if (last !== -1) break;
+      }
+      for (let h = startHour; h < endHour; h++) {
+        for (let q = 0; q < 4; q++) { if (appData.grid[`${d+1}-${h}-${q}`]) { first = h + (q * 0.25); break; } }
+        if (first !== -1) break;
+      }
+      if (last !== -1 && first !== -1) {
+        const nightRest = (24 - last) + first;
+        if (nightRest < 7.0) alerts.push(`Nuit ${days[d]}->${days[d+1]}: ${nightRest.toFixed(1)}h de repos ! Risque épaule.`);
+      }
+    }
+
+    if (alerts.length > 0) { banner.style.display = 'flex'; text.innerText = alerts[0]; }
+    else { banner.style.display = 'none'; }
+  }
+
+  // SIDEBAR
+  function switchSidebarTab(tab) {
+    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+    ['plan', 'tmpl', 'sync', 'hist'].forEach(t => document.getElementById(`tab-${t}`).style.display = 'none');
+    document.querySelector(`.nav-tab[onclick="switchSidebarTab('${tab}')"]`).classList.add('active');
+    document.getElementById(`tab-${tab}`).style.display = 'flex';
+    if(tab === 'sync') updateQRCode();
+    if(tab === 'hist') renderHistory();
+  }
+
+  function renderSidebar() {
+    const cont = document.getElementById('category-cards-container');
+    cont.innerHTML = '';
+    appData.categories.sort((a,b) => a.priority - b.priority);
+
+    appData.categories.forEach(cat => {
+      const card = document.createElement('div');
+      card.className = 'cat-card';
+      card.style.borderLeftColor = cat.color;
+      let prioClass = cat.priority <= 3 ? 'prio-1' : (cat.priority <= 6 ? 'prio-2' : 'prio-3');
+
+      card.innerHTML = `
+        <div class="cat-card-header">
+          <span>${cat.name}</span>
+          <span class="badge-prio ${prioClass}">Prio #${cat.priority}</span>
+        </div>
+        <div class="chips-container">
+          ${cat.subs.map(s => `
+            <span class="chip ${activeTool.catId === cat.id && activeTool.sub === s ? 'selected' : ''}"
+                  onclick="selectSub('${cat.id}', '${s.replace(/'/g, "\\'")}')">${s}</span>
+          `).join('')}
+        </div>
+      `;
+      cont.appendChild(card);
+    });
+  }
+
+  function selectSub(catId, sub) {
+    activeTool = { catId, sub };
+    renderSidebar();
+  }
+
+  // SYNCHRO ET QR CODE
+  function updateQRCode() {
+    const box = document.getElementById('qrcode-box');
+    if (!box) return;
+    box.innerHTML = '';
+    if (window.QRCode && window.LZString) {
+      const jsonStr = JSON.stringify({ grid: appData.grid, categories: appData.categories });
+      const compressed = LZString.compressToEncodedURIComponent(jsonStr);
+      const syncUrl = `${window.location.origin}${window.location.pathname}#sync=${compressed}`;
+      try {
+        new QRCode(box, { text: syncUrl, width: 150, height: 150 });
+      } catch (e) {
+        box.innerHTML = "<span style='font-size:0.7rem; color:var(--danger);'>Données volumineuses. Utilise le bouton Copier le lien.</span>";
+      }
+    }
+  }
+
+  function copySyncUrl() {
+    const jsonStr = JSON.stringify({ grid: appData.grid, categories: appData.categories });
+    const compressed = LZString.compressToEncodedURIComponent(jsonStr);
+    const syncUrl = `${window.location.origin}${window.location.pathname}#sync=${compressed}`;
+    navigator.clipboard.writeText(syncUrl);
+    alert("🔗 Lien synchronisé copié ! Ouvre-le sur ton téléphone.");
+  }
+
+  function checkUrlSyncImport() {
+    if (window.location.hash.startsWith('#sync=') && window.LZString) {
+      try {
+        const raw = window.location.hash.replace('#sync=', '');
+        const decompressed = LZString.decompressFromEncodedURIComponent(raw);
+        const parsed = JSON.parse(decompressed);
+        if (parsed.grid) appData.grid = parsed.grid;
+        if (parsed.categories) appData.categories = parsed.categories;
+        saveState();
+        window.location.hash = '';
+        alert("📲 Données synchronisées avec succès !");
+      } catch(e) { console.error("Erreur sync:", e); }
+    }
+  }
+
+  // PARAMÈTRES (MODAL)
+  function openSettingsModal() {
+    const tbody = document.getElementById('settingsTableBody');
+    tbody.innerHTML = '';
+    appData.categories.forEach((cat, idx) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><input type="number" class="inp-txt" style="width:45px;" value="${cat.priority}" id="m_prio_${idx}"></td>
+        <td><input type="text" class="inp-txt" style="width:110px;" value="${cat.name}" id="m_name_${idx}"></td>
+        <td><input type="color" value="${cat.color}" style="border:none; width:28px; height:24px; background:none; cursor:pointer;" id="m_col_${idx}"></td>
+        <td><input type="number" step="0.5" class="inp-txt" style="width:55px;" value="${cat.targetHours}" id="m_tar_${idx}"></td>
+        <td><input type="text" class="inp-txt" style="width:100%;" value="${cat.subs.join(', ')}" id="m_sub_${idx}"></td>
+        <td style="text-align:center;"><input type="checkbox" ${cat.keepOnReset ? 'checked' : ''} id="m_lock_${idx}"></td>
+        <td style="text-align:center;"><input type="checkbox" ${cat.showInCounter ? 'checked' : ''} id="m_cnt_${idx}"></td>
+        <td><button onclick="deleteCategory(${idx})" style="background:none; border:none; color:var(--danger); cursor:pointer;">🗑️</button></td>
+      `;
+      tbody.appendChild(tr);
+    });
+    document.getElementById('settingsModal').style.display = 'flex';
+  }
+
+  function syncModalInputsToState() {
+    appData.categories.forEach((cat, idx) => {
+      const prioEl = document.getElementById(`m_prio_${idx}`);
+      if (prioEl) {
+        cat.priority = parseInt(prioEl.value, 10) || 99;
+        cat.name = document.getElementById(`m_name_${idx}`).value.trim();
+        cat.color = document.getElementById(`m_col_${idx}`).value;
+        cat.targetHours = parseFloat(document.getElementById(`m_tar_${idx}`).value) || 0;
+        cat.subs = document.getElementById(`m_sub_${idx}`).value.split(',').map(s => s.trim()).filter(Boolean);
+        cat.keepOnReset = document.getElementById(`m_lock_${idx}`).checked;
+        cat.showInCounter = document.getElementById(`m_cnt_${idx}`).checked;
+      }
+    });
+  }
+
+  function addNewCategoryRow() {
+    syncModalInputsToState();
+    appData.categories.push({
+      id: 'cat_' + Date.now(),
+      name: 'Nouvelle Matière',
+      priority: appData.categories.length + 1,
+      color: '#38bdf8',
+      targetHours: 4,
+      keepOnReset: false,
+      showInCounter: true,
+      subs: ['Général']
+    });
+    openSettingsModal();
+  }
+
+  function deleteCategory(idx) {
+    syncModalInputsToState();
+    appData.categories.splice(idx, 1);
+    openSettingsModal();
+  }
+
+  function saveSettingsFormAndClose() {
+    syncModalInputsToState();
+    closeSettingsModal();
+    renderSidebar();
+    refreshAllUI();
+    saveState();
+  }
+
+  function closeSettingsModal() { document.getElementById('settingsModal').style.display = 'none'; }
+  function resetDefaultConfig() {
+    if (confirm("Rétablir les catégories par défaut ?")) {
+      appData.categories = JSON.parse(JSON.stringify(DEFAULT_CATEGORIES));
+      openSettingsModal();
+    }
+  }
+
+  // ACTIONS BOUTONS DIVERS
+  function saveAsTemplate() { appData.templateGrid = JSON.parse(JSON.stringify(appData.grid)); saveState(); alert("Grille type sauvegardée !"); }
+  function loadTemplate() {
+    if(confirm("Charger la grille type ?")) { appData.grid = JSON.parse(JSON.stringify(appData.templateGrid)); refreshAllUI(); saveState(); }
+  }
+  function cleanWeekPreservingLocked() {
+    if(confirm("Garder uniquement les catégories 'Fixes' (ex: Cours) et effacer le reste ?")) {
+      const lockedCatIds = new Set(appData.categories.filter(c => c.keepOnReset).map(c => c.id));
+      for (const k of Object.keys(appData.grid)) { if (!lockedCatIds.has(appData.grid[k].catId)) delete appData.grid[k]; }
+      refreshAllUI(); saveState();
+    }
+  }
+  function hardResetWeek() {
+    if(confirm("Tout effacer ?")) { appData.grid = {}; refreshAllUI(); saveState(); }
+  }
+  function setCounterMode(mode) {
+    appData.counterMode = mode;
+    document.getElementById('btnViewWeek').style.border = mode === 'week' ? 'none' : '1px solid var(--border)';
+    document.getElementById('btnViewDay').style.border = mode === 'day' ? 'none' : '1px solid var(--border)';
+    updateDashboard();
+  }
+  function setMobileDay(dayIdx) {
+    appData.mobileDay = dayIdx;
+    const table = document.getElementById('calendarTable');
+    if (dayIdx === -1) {
+      table.classList.remove('mobile-day-view');
+      document.querySelectorAll('.grid-day-head, .time-slot-cell').forEach(el => el.classList.remove('active-col'));
+    } else {
+      table.classList.add('mobile-day-view');
+      document.querySelectorAll('.grid-day-head, .time-slot-cell').forEach(el => {
+        el.classList.toggle('active-col', el.classList.contains(`head-col-${dayIdx}`) || el.classList.contains(`col-${dayIdx}`));
+      });
+    }
+  }
+  function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
+
+  // IMPORT/EXPORT
+  async function fetchIcalFromUrl() {
+    const url = document.getElementById('inp-ical-url').value.trim();
+    if (!url) return;
+    try {
+      const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`);
+      parseAndApplyICS(await res.text());
+    } catch(err) { alert("Erreur d'import. Utilise plutôt le fichier .ics"); }
+  }
+  function handleFileIcs(e) {
+    const f = e.target.files[0];
+    if (f) { const r = new FileReader(); r.onload = ev => parseAndApplyICS(ev.target.result); r.readAsText(f); }
+  }
+  
+  function parseAndApplyICS(icsData) {
+    let eventsCount = 0, inEvent = false, dtstart = '', summary = '';
+    
+    const lines = icsData.split(/\r?\n/);
+    lines.forEach(line => {
+      if (line.startsWith('BEGIN:VEVENT')) { inEvent = true; dtstart = ''; summary = ''; }
+      else if (line.startsWith('END:VEVENT')) {
+        inEvent = false;
+        if (dtstart && summary && dtstart.length >= 13) {
+          const y=parseInt(dtstart.substr(0,4)), m=parseInt(dtstart.substr(4,2))-1, d=parseInt(dtstart.substr(6,2));
+          const h=parseInt(dtstart.substr(9,2)), min=parseInt(dtstart.substr(11,2));
+          const dayIdx = (new Date(y, m, d).getDay() + 6) % 7;
+          for (let i = 0; i < 8; i++) {
+            const cH = h + Math.floor((min + i * 15) / 60), cQ = Math.floor(((min + i * 15) % 60) / 15);
+            if (cH >= startHour && cH < endHour) appData.grid[`${dayIdx}-${cH}-${cQ}`] = { catId: 'cat_cours', sub: summary.substring(0,18) };
+          }
+          eventsCount++;
+        }
+      } else if (inEvent) {
+        if (line.startsWith('DTSTART')) dtstart = line.split(':')[1];
+        if (line.startsWith('SUMMARY')) summary = line.split(':')[1];
+      }
+    });
+    refreshAllUI(); saveState(); alert(`📅 ${eventsCount} créneaux importés !`);
+  }
+  
+  function archiveCurrentWeek() {
+    appData.history.unshift({
+      date: new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }),
+      grid: JSON.parse(JSON.stringify(appData.grid)),
+      totalEvents: Object.keys(appData.grid).length
+    });
+    if (appData.history.length > 10) appData.history.pop();
+    saveState(); renderHistory(); alert("Semaine archivée !");
+  }
+
+  function renderHistory() {
+    const list = document.getElementById('history-list');
+    list.innerHTML = '';
+    appData.history.forEach((h, idx) => {
+      list.innerHTML += `<div class="cat-card"><div style="display:flex; justify-content:space-between; font-weight:700;"><span>${h.date}</span><button class="btn btn-secondary" style="padding:2px 6px; font-size:0.7rem;" onclick="appData.grid = JSON.parse(JSON.stringify(appData.history[${idx}].grid)); refreshAllUI(); saveState();">Restaurer</button></div></div>`;
+    });
+  }
+
+  function exportToGoogleCalendar() {
+    archiveCurrentWeek();
+    let ics = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//INSA SHN TimePlanner//FR\n";
+    const nextMonday = new Date(); nextMonday.setDate(nextMonday.getDate() + ((1 + 7 - nextMonday.getDay()) % 7 || 7));
+
+    for (const [key, item] of Object.entries(appData.grid)) {
+      const [d, h, q] = key.split('-').map(Number);
+      const cat = appData.categories.find(c => c.id === item.catId);
+      const evDate = new Date(nextMonday); evDate.setDate(nextMonday.getDate() + d);
+      const y = evDate.getFullYear(), m = String(evDate.getMonth() + 1).padStart(2,'0'), dayStr = String(evDate.getDate()).padStart(2,'0');
+      let endH = h, endMin = (q * 15) + 15; if (endMin >= 60) { endH++; endMin = 0; }
+      const tStart = `${String(h).padStart(2,'0')}${String(q*15).padStart(2,'0')}00`, tEnd = `${String(endH).padStart(2,'0')}${String(endMin).padStart(2,'0')}00`;
+      
+      ics += `BEGIN:VEVENT\nSUMMARY:[${cat ? cat.name : 'Activité'}] ${item.sub}\nDTSTART:${y}${m}${dayStr}T${tStart}\nDTEND:${y}${m}${dayStr}T${tEnd}\nEND:VEVENT\n`;
+    }
+    ics += "END:VCALENDAR";
+    
+    const link = document.createElement("a"); 
+    link.href = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8;' }));
+    link.setAttribute("download", `planning_${new Date().toISOString().slice(0,10)}.ics`);
+    document.body.appendChild(link); 
+    link.click(); 
+    document.body.removeChild(link);
+  }
+
+  window.onload = initApp;
+</script>
+</body>
+</html>
