@@ -1041,33 +1041,82 @@
     const f = e.target.files[0];
     if (f) { const r = new FileReader(); r.onload = ev => parseAndApplyICS(ev.target.result); r.readAsText(f); }
   }
-  
+
+  // --- NOUVEAU PARSEUR (CORRECTION TIMEZONE) ---
   function parseAndApplyICS(icsData) {
-    let eventsCount = 0, inEvent = false, dtstart = '', summary = '';
-    
+    let eventsCount = 0, inEvent = false, dtstart = '', dtend = '', summary = '';
+
     const lines = icsData.split(/\r?\n/);
     lines.forEach(line => {
-      if (line.startsWith('BEGIN:VEVENT')) { inEvent = true; dtstart = ''; summary = ''; }
+      if (line.startsWith('BEGIN:VEVENT')) { inEvent = true; dtstart = ''; dtend = ''; summary = ''; }
       else if (line.startsWith('END:VEVENT')) {
         inEvent = false;
-        if (dtstart && summary && dtstart.length >= 13) {
-          const y=parseInt(dtstart.substr(0,4)), m=parseInt(dtstart.substr(4,2))-1, d=parseInt(dtstart.substr(6,2));
-          const h=parseInt(dtstart.substr(9,2)), min=parseInt(dtstart.substr(11,2));
-          const dayIdx = (new Date(y, m, d).getDay() + 6) % 7;
-          for (let i = 0; i < 8; i++) {
-            const cH = h + Math.floor((min + i * 15) / 60), cQ = Math.floor(((min + i * 15) % 60) / 15);
-            if (cH >= startHour && cH < endHour) appData.grid[`${dayIdx}-${cH}-${cQ}`] = { catId: 'cat_cours', sub: summary.substring(0,18) };
-          }
+        if (dtstart && summary) {
+          placeIcalEventOnGrid(dtstart, dtend, summary);
           eventsCount++;
         }
       } else if (inEvent) {
-        if (line.startsWith('DTSTART')) dtstart = line.split(':')[1];
-        if (line.startsWith('SUMMARY')) summary = line.split(':')[1];
+        // On coupe correctement au ":" pour éviter les bugs de timezone (TZID)
+        if (line.startsWith('DTSTART')) dtstart = line.substring(line.indexOf(':') + 1).trim();
+        if (line.startsWith('DTEND')) dtend = line.substring(line.indexOf(':') + 1).trim();
+        if (line.startsWith('SUMMARY')) summary = line.substring(line.indexOf(':') + 1).trim();
       }
     });
-    refreshAllUI(); saveState(); alert(`📅 ${eventsCount} créneaux importés !`);
+    refreshAllUI(); saveState(); alert(`📅 ${eventsCount} créneaux importés avec les bons horaires !`);
   }
-  
+
+  function placeIcalEventOnGrid(startStr, endStr, summary) {
+    if (!startStr || startStr.length < 13) return;
+
+    // Détection de l'heure universelle (présence du 'Z' à la fin)
+    const isUTC = startStr.endsWith('Z');
+
+    const y = parseInt(startStr.substr(0,4));
+    const m = parseInt(startStr.substr(4,2)) - 1;
+    const d = parseInt(startStr.substr(6,2));
+    const h = parseInt(startStr.substr(9,2));
+    const min = parseInt(startStr.substr(11,2));
+
+    // Conversion magique : on passe de l'heure du fichier à ton heure locale
+    let startDate;
+    if (isUTC) {
+      startDate = new Date(Date.UTC(y, m, d, h, min));
+    } else {
+      startDate = new Date(y, m, d, h, min);
+    }
+
+    const dayIdx = (startDate.getDay() + 6) % 7; // Lundi = 0
+    const localH = startDate.getHours();
+    const localMin = startDate.getMinutes();
+
+    // Calcul précis de la durée du cours (pour les TP de 3h, TD de 1h15, etc.)
+    let quarterSlots = 8; // 2h par défaut
+    if (endStr && endStr.length >= 13) {
+      const ey = parseInt(endStr.substr(0,4)), em = parseInt(endStr.substr(4,2)) - 1, ed = parseInt(endStr.substr(6,2));
+      const eh = parseInt(endStr.substr(9,2)), emin = parseInt(endStr.substr(11,2));
+
+      let endDate = (endStr.endsWith('Z') || isUTC)
+        ? new Date(Date.UTC(ey, em, ed, eh, emin))
+        : new Date(ey, em, ed, eh, emin);
+
+      const diffMs = endDate - startDate;
+      quarterSlots = Math.max(1, Math.round(diffMs / (15 * 60 * 1000)));
+    }
+
+    // Placement sur les cases de 15 minutes
+    for (let i = 0; i < quarterSlots; i++) {
+      const currentH = localH + Math.floor((localMin + i * 15) / 60);
+      const currentQ = Math.floor(((localMin + i * 15) % 60) / 15);
+      if (currentH >= startHour && currentH < endHour) {
+        appData.grid[`${dayIdx}-${currentH}-${currentQ}`] = {
+          catId: 'cat_cours',
+          sub: summary.substring(0, 18)
+        };
+      }
+    }
+  }
+  // ---------------------------------------------
+
   function archiveCurrentWeek() {
     appData.history.unshift({
       date: new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }),
