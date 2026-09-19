@@ -1138,26 +1138,76 @@
   function exportToGoogleCalendar() {
     archiveCurrentWeek();
     let ics = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//INSA SHN TimePlanner//FR\n";
-    const nextMonday = new Date(); nextMonday.setDate(nextMonday.getDate() + ((1 + 7 - nextMonday.getDay()) % 7 || 7));
+    const nextMonday = new Date(); 
+    nextMonday.setDate(nextMonday.getDate() + ((1 + 7 - nextMonday.getDay()) % 7 || 7));
 
+    // Étape 1 : Grouper les créneaux par jour
+    const eventsByDay = {};
     for (const [key, item] of Object.entries(appData.grid)) {
       const [d, h, q] = key.split('-').map(Number);
-      const cat = appData.categories.find(c => c.id === item.catId);
-      const evDate = new Date(nextMonday); evDate.setDate(nextMonday.getDate() + d);
-      const y = evDate.getFullYear(), m = String(evDate.getMonth() + 1).padStart(2,'0'), dayStr = String(evDate.getDate()).padStart(2,'0');
-      let endH = h, endMin = (q * 15) + 15; if (endMin >= 60) { endH++; endMin = 0; }
-      const tStart = `${String(h).padStart(2,'0')}${String(q*15).padStart(2,'0')}00`, tEnd = `${String(endH).padStart(2,'0')}${String(endMin).padStart(2,'0')}00`;
-      
-      ics += `BEGIN:VEVENT\nSUMMARY:[${cat ? cat.name : 'Activité'}] ${item.sub}\nDTSTART:${y}${m}${dayStr}T${tStart}\nDTEND:${y}${m}${dayStr}T${tEnd}\nEND:VEVENT\n`;
+      if (!eventsByDay[d]) eventsByDay[d] = [];
+      eventsByDay[d].push({ h, q, catId: item.catId, sub: item.sub, timeIndex: h * 4 + q });
     }
+
+    // Étape 2 : Trier chronologiquement et fusionner les blocs adjacents
+    for (let d = 0; d < 7; d++) {
+      if (!eventsByDay[d]) continue;
+      eventsByDay[d].sort((a, b) => a.timeIndex - b.timeIndex);
+
+      let currentEv = null;
+
+      for (let i = 0; i < eventsByDay[d].length; i++) {
+        const slot = eventsByDay[d][i];
+        
+        if (!currentEv) {
+          // On démarre un nouveau bloc
+          currentEv = { ...slot, endH: slot.h, endQ: slot.q + 1 };
+          if (currentEv.endQ === 4) { currentEv.endH++; currentEv.endQ = 0; }
+        } else {
+          // Vérifie si le slot actuel touche exactement la fin du précédent ET a la même catégorie
+          const isContiguous = (currentEv.endH === slot.h && currentEv.endQ === slot.q);
+          const isSameTask = (currentEv.catId === slot.catId && currentEv.sub === slot.sub);
+
+          if (isContiguous && isSameTask) {
+            // C'est la suite du même événement, on allonge sa durée
+            currentEv.endQ = slot.q + 1;
+            if (currentEv.endQ === 4) { currentEv.endH++; currentEv.endQ = 0; }
+          } else {
+            // Le bloc est terminé, on le grave dans le fichier et on en commence un nouveau
+            ics += buildVeventString(currentEv, d, nextMonday);
+            currentEv = { ...slot, endH: slot.h, endQ: slot.q + 1 };
+            if (currentEv.endQ === 4) { currentEv.endH++; currentEv.endQ = 0; }
+          }
+        }
+      }
+      // N'oublie pas de graver le tout dernier bloc de la journée
+      if (currentEv) ics += buildVeventString(currentEv, d, nextMonday);
+    }
+
     ics += "END:VCALENDAR";
     
     const link = document.createElement("a"); 
     link.href = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8;' }));
-    link.setAttribute("download", `planning_${new Date().toISOString().slice(0,10)}.ics`);
+    link.setAttribute("download", `planning_propre_${new Date().toISOString().slice(0,10)}.ics`);
     document.body.appendChild(link); 
     link.click(); 
     document.body.removeChild(link);
+  }
+
+  // Fonction utilitaire pour écrire l'événement au bon format iCal
+  function buildVeventString(ev, d, nextMonday) {
+    const cat = appData.categories.find(c => c.id === ev.catId);
+    const evDate = new Date(nextMonday); 
+    evDate.setDate(nextMonday.getDate() + d);
+    
+    const y = evDate.getFullYear();
+    const m = String(evDate.getMonth() + 1).padStart(2,'0');
+    const dayStr = String(evDate.getDate()).padStart(2,'0');
+    
+    const tStart = `${String(ev.h).padStart(2,'0')}${String(ev.q * 15).padStart(2,'0')}00`;
+    const tEnd = `${String(ev.endH).padStart(2,'0')}${String(ev.endQ * 15).padStart(2,'0')}00`;
+    
+    return `BEGIN:VEVENT\nSUMMARY:[${cat ? cat.name : 'Activité'}] ${ev.sub}\nDTSTART:${y}${m}${dayStr}T${tStart}\nDTEND:${y}${m}${dayStr}T${tEnd}\nDESCRIPTION:Priorité: #${cat ? cat.priority : 'N/A'}\nEND:VEVENT\n`;
   }
 
   window.onload = initApp;
